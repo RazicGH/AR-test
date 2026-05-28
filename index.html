@@ -2,16 +2,18 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
     <title>Interactive AR Experience</title>
     <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.5/aframe/build/aframe-ar.js"></script>
     <script src="https://unpkg.com/aframe-animation-component@5.1.2/dist/aframe-animation-component.min.js"></script>
     <style>
         body {
             margin: 0;
             overflow: hidden;
             font-family: 'Arial', sans-serif;
+            -webkit-user-select: none; /* 💡 スマホの長押し選択を防止 */
+            user-select: none;
         }
         #ui {
             position: fixed;
@@ -27,6 +29,7 @@
             font-size: 16px;
             font-weight: bold;
             border: 2px solid #00aaff;
+            pointer-events: none; /* 💡 UIの裏側もタップできるように透過 */
         }
         #score {
             position: fixed;
@@ -39,16 +42,23 @@
             font-size: 24px;
             font-weight: bold;
             z-index: 100;
+            pointer-events: none; /* 💡 UIの裏側もタップできるように透過 */
+        }
+        /* 💡 カメラ映像がズームされるバグをCSSで強制修正 */
+        .a-canvas {
+            width: 100% !important;
+            height: 100% !important;
+            top: 0 !important;
+            left: 0 !important;
         }
     </style>
 </head>
 <body>
     <div id="score">Score: 0</div>
-    <div id="ui">クリックして球を破壊しよう！</div>
+    <div id="ui">タップして球を破壊しよう！</div>
 
-    <a-scene embedded arjs vr-mode-ui="enabled: false;">
+    <a-scene embedded arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false;" vr-mode-ui="enabled: false;">
         <a-marker preset="hiro">
-            <!-- メインの回転球 -->
             <a-sphere 
                 id="mainSphere"
                 position="0 0.5 0" 
@@ -58,58 +68,54 @@
                 animation__bounce="property: position; to: 0 0.7 0; loop: true; dur: 2000; easing: easeInOutQuad; dir: alternate">
             </a-sphere>
 
-            <!-- 周囲を回転する小さな球 -->
             <a-entity id="orbitParent" rotation="0 0 0" animation__orbitRotate="property: rotation; to: 0 360 0; loop: true; dur: 6000; easing: linear">
                 <a-sphere 
                     class="orbiter"
                     position="0.8 0.5 0" 
-                    radius="0.2" 
+                    radius="0.15" 
                     material="color: #ff00aa; emissive: #ff00aa; emissiveIntensity: 0.5;"
                     animation__scale="property: scale; to: 1.2 1.2 1.2; loop: true; dur: 1000; easing: easeInOutQuad; dir: alternate">
                 </a-sphere>
                 <a-sphere 
                     class="orbiter"
                     position="-0.8 0.5 0" 
-                    radius="0.2" 
+                    radius="0.15" 
                     material="color: #00ff88; emissive: #00ff88; emissiveIntensity: 0.5;"
                     animation__scale="property: scale; to: 1.2 1.2 1.2; loop: true; dur: 1200; easing: easeInOutQuad; dir: alternate; delay: 300">
                 </a-sphere>
                 <a-sphere 
                     class="orbiter"
                     position="0 0.5 0.8" 
-                    radius="0.2" 
+                    radius="0.15" 
                     material="color: #ffaa00; emissive: #ffaa00; emissiveIntensity: 0.5;"
                     animation__scale="property: scale; to: 1.2 1.2 1.2; loop: true; dur: 1400; easing: easeInOutQuad; dir: alternate; delay: 600">
                 </a-sphere>
             </a-entity>
 
-            <!-- キューブのグリッド -->
             <a-entity id="cubeGrid" position="0 1.2 0">
-                <a-box class="cube" position="-0.4 0 -0.4" scale="0.3 0.3 0.3" material="color: #ff0000;" rotation="0 0 0"
+                <a-box class="cube" position="-0.4 0 -0.4" scale="0.25 0.25 0.25" material="color: #ff0000;" rotation="0 0 0"
                     animation__rotX="property: rotation; to: 45 45 45; loop: true; dur: 3000; easing: linear"></a-box>
-                <a-box class="cube" position="0 0 -0.4" scale="0.3 0.3 0.3" material="color: #00ff00;" rotation="0 0 0"
+                <a-box class="cube" position="0 0 -0.4" scale="0.25 0.25 0.25" material="color: #00ff00;" rotation="0 0 0"
                     animation__rotX="property: rotation; to: 45 45 45; loop: true; dur: 3000; easing: linear; delay: 200"></a-box>
-                <a-box class="cube" position="0.4 0 -0.4" scale="0.3 0.3 0.3" material="color: #0000ff;" rotation="0 0 0"
+                <a-box class="cube" position="0.4 0 -0.4" scale="0.25 0.25 0.25" material="color: #0000ff;" rotation="0 0 0"
                     animation__rotX="property: rotation; to: 45 45 45; loop: true; dur: 3000; easing: linear; delay: 400"></a-box>
-                <a-box class="cube" position="-0.4 0 0" scale="0.3 0.3 0.3" material="color: #ffff00;" rotation="0 0 0"
+                <a-box class="cube" position="-0.4 0 0" scale="0.25 0.25 0.25" material="color: #ffff00;" rotation="0 0 0"
                     animation__rotX="property: rotation; to: 45 45 45; loop: true; dur: 3000; easing: linear; delay: 600"></a-box>
-                <a-box class="cube" position="0.4 0 0" scale="0.3 0.3 0.3" material="color: #ff00ff;" rotation="0 0 0"
+                <a-box class="cube" position="0.4 0 0" scale="0.25 0.25 0.25" material="color: #ff00ff;" rotation="0 0 0"
                     animation__rotX="property: rotation; to: 45 45 45; loop: true; dur: 3000; easing: linear; delay: 800"></a-box>
-                <a-box class="cube" position="-0.4 0 0.4" scale="0.3 0.3 0.3" material="color: #00ffff;" rotation="0 0 0"
+                <a-box class="cube" position="-0.4 0 0.4" scale="0.25 0.25 0.25" material="color: #00ffff;" rotation="0 0 0"
                     animation__rotX="property: rotation; to: 45 45 45; loop: true; dur: 3000; easing: linear; delay: 1000"></a-box>
-                <a-box class="cube" position="0 0 0.4" scale="0.3 0.3 0.3" material="color: #ff6600;" rotation="0 0 0"
+                <a-box class="cube" position="0 0 0.4" scale="0.25 0.25 0.25" material="color: #ff6600;" rotation="0 0 0"
                     animation__rotX="property: rotation; to: 45 45 45; loop: true; dur: 3000; easing: linear; delay: 1200"></a-box>
-                <a-box class="cube" position="0.4 0 0.4" scale="0.3 0.3 0.3" material="color: #00ff88;" rotation="0 0 0"
+                <a-box class="cube" position="0.4 0 0.4" scale="0.25 0.25 0.25" material="color: #00ff88;" rotation="0 0 0"
                     animation__rotX="property: rotation; to: 45 45 45; loop: true; dur: 3000; easing: linear; delay: 1400"></a-box>
             </a-entity>
 
-            <!-- ライティング -->
-            <a-light type="ambient" color="#fff" intensity="1"></a-light>
+            <a-light type="ambient" color="#fff" intensity="0.8"></a-light>
             <a-light type="point" color="#00aaff" position="1 2 1" intensity="1"></a-light>
-            <a-light type="point" color="#ff00aa" position="-1 2 -1" intensity="0.8"></a-light>
         </a-marker>
 
-        <a-entity camera></a-entity>
+        <a-entity camera cursor="rayOrigin: mouse" raycaster="objects: .cube, #mainSphere, .orbiter"></a-entity>
     </a-scene>
 
     <script>
@@ -117,88 +123,42 @@
         const scoreDisplay = document.getElementById('score');
         const uiDisplay = document.getElementById('ui');
 
-        // クリック操作でキューブを破壊
+        // キューブを破壊
         document.querySelectorAll('.cube').forEach(cube => {
-            cube.addEventListener('click', function() {
-                // スケールをアニメーション
-                this.setAttribute('animation__pop', {
-                    property: 'scale',
-                    to: '0 0 0',
-                    dur: 300,
-                    easing: 'easeOutQuad'
-                });
+            cube.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if(this.getAttribute('scale').x === 0) return; // 💡 すでに破壊済みの場合は無視
 
-                // ポップアップアニメーション
-                this.setAttribute('animation__rise', {
-                    property: 'position',
-                    to: this.getAttribute('position').split(' ').map((v, i) => i === 1 ? parseFloat(v) + 0.5 : v).join(' '),
-                    dur: 300,
-                    easing: 'easeOutQuad'
-                });
-
-                // スコア加算
+                this.setAttribute('animation__pop', { property: 'scale', to: '0 0 0', dur: 200, easing: 'easeOutQuad' });
+                
                 score += 10;
                 scoreDisplay.textContent = 'Score: ' + score;
+                uiDisplay.textContent = 'キューブ破壊！ +10';
 
-                // 回転アニメーション追加
-                this.setAttribute('animation__explode', {
-                    property: 'rotation',
-                    to: '360 360 360',
-                    dur: 300,
-                    easing: 'linear'
-                });
-
-                // 300ms後に非表示
-                setTimeout(() => {
-                    this.style.display = 'none';
-                }, 300);
+                setTimeout(() => { this.style.display = 'none'; }, 200);
             });
         });
 
-        // メイン球のクリック操作
-        document.getElementById('mainSphere').addEventListener('click', function() {
+        // メイン球のタップ
+        document.getElementById('mainSphere').addEventListener('click', function(e) {
+            e.stopPropagation();
             score += 50;
             scoreDisplay.textContent = 'Score: ' + score;
-            uiDisplay.textContent = 'グレート！+50ポイント！';
+            uiDisplay.textContent = 'グレート！ +50ポイント！';
 
-            // 一時的にスケール
-            this.setAttribute('animation__hitScale', {
-                property: 'scale',
-                to: '0.7 0.7 0.7',
-                dur: 200,
-                easing: 'easeInOutQuad'
-            });
-
+            this.setAttribute('animation__hitScale', { property: 'scale', to: '0.8 0.8 0.8', dur: 100, easing: 'easeInOutQuad' });
             setTimeout(() => {
-                this.setAttribute('animation__hitScale', {
-                    property: 'scale',
-                    to: '1 1 1',
-                    dur: 200,
-                    easing: 'easeInOutQuad'
-                });
-                uiDisplay.textContent = 'クリックして球を破壊しよう！';
-            }, 200);
+                this.setAttribute('animation__hitScale', { property: 'scale', to: '1 1 1', dur: 100, easing: 'easeInOutQuad' });
+            }, 100);
         });
 
-        // 軌道上の球のクリック
+        // 軌道上の球のタップ
         document.querySelectorAll('.orbiter').forEach(orbiter => {
             orbiter.addEventListener('click', function(e) {
                 e.stopPropagation();
                 score += 25;
                 scoreDisplay.textContent = 'Score: ' + score;
-                uiDisplay.textContent = 'ナイス！+25ポイント！';
-
-                // スピン
-                this.setAttribute('animation__orbitHit', {
-                    property: 'rotation',
-                    to: '0 360 0',
-                    dur: 500,
-                    easing: 'linear'
-                });
-
-                setTimeout(() => {
-                    uiDisplay.textContent = 'クリックして球を破壊しよう！';
-                }, 1000);
+                uiDisplay.textContent = 'ナイス！ +25ポイント！';
             });
         });
     </script>
