@@ -1,72 +1,230 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-    <title>AR Object Viewer</title>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.5/aframe/build/aframe-ar.js"></script>
-    <script src="https://raw.githack.com/fcor/arjs-gestures/master/dist/gestures.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    <script src="https://unpkg.com/aframe-animation-component@5.1.2/dist/aframe-animation-component.min.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; }
-        #ui {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.7);
-            color: #fff;
-            padding: 12px 25px;
-            border-radius: 50px;
-            font-size: 14px;
-            font-weight: bold;
-            z-index: 100;
-            pointer-events: none;
-            border: 1px solid #00ffaa;
-        }
-        .a-canvas { width: 100% !important; height: 100% !important; top: 0 !important; left: 0 !important; }
+      body { margin: 0px; overflow: hidden; }
+      #info {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        color: white;
+        background: rgba(0,0,0,0.6);
+        padding: 10px 15px;
+        border-radius: 5px;
+        font-family: Arial, sans-serif;
+        font-size: 12px;
+        z-index: 100;
+        max-width: 200px;
+      }
+      #controls {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: white;
+        background: rgba(0,0,0,0.7);
+        padding: 15px 20px;
+        border-radius: 10px;
+        font-family: Arial, sans-serif;
+        text-align: center;
+        z-index: 100;
+      }
+      button {
+        background: #00aaff;
+        color: white;
+        border: none;
+        padding: 10px 15px;
+        margin: 5px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+      }
+      button:active {
+        background: #0088cc;
+      }
     </style>
-</head>
-<body>
-    <div id="ui">📱 1本指で回転 / 2本指でズーム</div>
+  </head>
+  <body>
+    <div id="info">
+      <div>スマホでの操作:</div>
+      <div>・ドラッグ: 立方体回転</div>
+      <div>・ボタン: 自動回転</div>
+      <div>・ピンチ: サイズ変更</div>
+    </div>
+    
+    <div id="controls">
+      <div style="margin-bottom: 10px;">立方体を操作してください</div>
+      <button onclick="toggleAutoRotate()">自動回転 ON/OFF</button>
+      <button onclick="resetObject()">リセット</button>
+    </div>
 
-    <a-scene embedded arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false;" vr-mode-ui="enabled: false;" gesture-detector>
-        <a-marker preset="hiro">
-            
-            <a-entity
-                id="gesture-container"
-                gesture-handler
-                position="0 0 0"
-                scale="1 1 1">
-                
-                <a-sphere 
-                    radius="0.2" 
-                    material="color: #00ffaa; emissive: #00ffaa; emissiveIntensity: 0.3; roughness: 0.1;">
-                </a-sphere>
-
-                <a-torus-knot 
-                    radius="0.25" 
-                    radius-tubular="0.03" 
-                    p="2" 
-                    q="3"
-                    material="color: #00aaff; metalness: 0.9; roughness: 0.1;">
-                </a-torus-knot>
-
-                <a-torus 
-                    radius="0.4" 
-                    radius-tubular="0.01" 
-                    rotation="45 45 0"
-                    material="color: #ffffff; opacity: 0.7;">
-                </a-torus>
-
-            </a-entity>
-
-            <a-light type="ambient" color="#fff" intensity="0.6"></a-light>
-            <a-light type="directional" color="#00ffaa" position="1 2 1" intensity="0.8"></a-light>
-            <a-light type="directional" color="#00aaff" position="-1 2 -1" intensity="0.8"></a-light>
-        </a-marker>
-
-        <a-entity camera></a-entity>
+    <a-scene embedded arjs>
+      <a-marker preset="hiro">
+        <!-- 立方体（タッチで操作可能） -->
+        <a-box 
+          id="interactive-cube"
+          position="0 0.5 0" 
+          width="1" 
+          height="1" 
+          depth="1"
+          material="color: #00aaff; wireframe: false;">
+        </a-box>
+        
+        <!-- 補助用の球（マーカー中心の視覚化） -->
+        <a-sphere 
+          position="0 0 0" 
+          radius="0.1" 
+          material="color: #ff6600; opacity: 0.5;">
+        </a-sphere>
+      </a-marker>
+      
+      <a-entity camera></a-entity>
     </a-scene>
-</body>
+
+    <script>
+      const cube = document.getElementById('interactive-cube');
+      let cubeRotation = { x: 0, y: 0, z: 0 };
+      let autoRotate = false;
+      let lastTouchX = 0;
+      let lastTouchY = 0;
+      let lastDistance = 0;
+      let cubeScale = 1;
+
+      // ====== タッチドラッグで回転 ======
+      document.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+          lastTouchX = e.touches[0].clientX;
+          lastTouchY = e.touches[0].clientY;
+        } else if (e.touches.length === 2) {
+          // ピンチジェスチャー
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          lastDistance = Math.sqrt(dx * dx + dy * dy);
+        }
+      });
+
+      document.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 1) {
+          const currentX = e.touches[0].clientX;
+          const currentY = e.touches[0].clientY;
+          
+          const deltaX = currentX - lastTouchX;
+          const deltaY = currentY - lastTouchY;
+          
+          // スマホの画面移動を回転に変換
+          cubeRotation.y += deltaX * 1; // X軸方向の移動 → Y軸回転
+          cubeRotation.x += deltaY * 1; // Y軸方向の移動 → X軸回転
+          
+          updateCubeRotation();
+          
+          lastTouchX = currentX;
+          lastTouchY = currentY;
+          
+          autoRotate = false; // 手動操作時は自動回転OFF
+        } else if (e.touches.length === 2) {
+          // ピンチズーム
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          const currentDistance = Math.sqrt(dx * dx + dy * dy);
+          
+          if (lastDistance > 0) {
+            const scale = currentDistance / lastDistance;
+            cubeScale *= scale;
+            cubeScale = Math.max(0.5, Math.min(2.5, cubeScale)); // 0.5〜2.5倍
+            cube.setAttribute('scale', `${cubeScale} ${cubeScale} ${cubeScale}`);
+          }
+          lastDistance = currentDistance;
+        }
+      });
+
+      // ====== マウスドラッグ（デスクトップテスト用） ======
+      let isMouseDown = false;
+      document.addEventListener('mousedown', (e) => {
+        isMouseDown = true;
+        lastTouchX = e.clientX;
+        lastTouchY = e.clientY;
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (isMouseDown) {
+          const deltaX = e.clientX - lastTouchX;
+          const deltaY = e.clientY - lastTouchY;
+          
+          cubeRotation.y += deltaX * 1;
+          cubeRotation.x += deltaY * 1;
+          updateCubeRotation();
+          
+          lastTouchX = e.clientX;
+          lastTouchY = e.clientY;
+          
+          autoRotate = false;
+        }
+      });
+
+      document.addEventListener('mouseup', () => {
+        isMouseDown = false;
+      });
+
+      // ====== ジャイロセンサー（オプション） ======
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        // iOS 13+
+        console.log('ジャイロセンサー対応デバイス');
+      } else if (typeof DeviceOrientationEvent !== 'undefined') {
+        // Android など
+        window.addEventListener('deviceorientation', (e) => {
+          if (!autoRotate) return; // 自動回転時のみジャイロ反映
+          
+          const alpha = e.alpha || 0; // Z軸
+          const beta = e.beta || 0;   // X軸
+          const gamma = e.gamma || 0; // Y軸
+          
+          // ジャイロ情報を反映（微調整）
+          cubeRotation.x = beta * 0.5;
+          cubeRotation.y = gamma * 0.5;
+          updateCubeRotation();
+        });
+      }
+
+      // ====== 回転更新 ======
+      function updateCubeRotation() {
+        cube.setAttribute('rotation', 
+          `${cubeRotation.x} ${cubeRotation.y} ${cubeRotation.z}`
+        );
+      }
+
+      // ====== 自動回転トグル ======
+      function toggleAutoRotate() {
+        autoRotate = !autoRotate;
+        
+        if (autoRotate) {
+          // 自動回転アニメーション
+          const autoRotateInterval = setInterval(() => {
+            if (!autoRotate) {
+              clearInterval(autoRotateInterval);
+              return;
+            }
+            cubeRotation.y += 2;
+            updateCubeRotation();
+          }, 30);
+        }
+      }
+
+      // ====== リセット ======
+      function resetObject() {
+        cubeRotation = { x: 0, y: 0, z: 0 };
+        cubeScale = 1;
+        autoRotate = false;
+        updateCubeRotation();
+        cube.setAttribute('scale', '1 1 1');
+      }
+
+      // 初期設定
+      updateCubeRotation();
+    </script>
+  </body>
 </html>
