@@ -1,230 +1,87 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <title>シンプルWebAR</title>
+
     <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
-    <script src="https://unpkg.com/aframe-animation-component@5.1.2/dist/aframe-animation-component.min.js"></script>
+
     <style>
-      body { margin: 0px; overflow: hidden; }
-      #info {
-        position: absolute;
-        top: 10px;
-        left: 10px;
-        color: white;
-        background: rgba(0,0,0,0.6);
-        padding: 10px 15px;
-        border-radius: 5px;
-        font-family: Arial, sans-serif;
-        font-size: 12px;
-        z-index: 100;
-        max-width: 200px;
-      }
-      #controls {
-        position: absolute;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        color: white;
-        background: rgba(0,0,0,0.7);
-        padding: 15px 20px;
-        border-radius: 10px;
-        font-family: Arial, sans-serif;
-        text-align: center;
-        z-index: 100;
-      }
-      button {
-        background: #00aaff;
-        color: white;
-        border: none;
-        padding: 10px 15px;
-        margin: 5px;
-        border-radius: 5px;
-        cursor: pointer;
-        font-weight: bold;
-      }
-      button:active {
-        background: #0088cc;
-      }
+        /* 画面全体の余白をゼロに */
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+
+        /* スマホでも崩れないレスポンシブUIコンテナ */
+        .ui-container {
+            position: fixed;
+            bottom: 30px; /* 画面下部から30pxの位置に固定 */
+            left: 50%;
+            transform: translateX(-50%);
+            width: 85%; /* スマホ画面の横幅85%にフィット */
+            max-width: 350px; /* PCなどで見たとき大きくなりすぎない制限 */
+            z-index: 9999; /* AR映像（背景）より必ず手前に表示 */
+            display: flex;
+            justify-content: center;
+            pointer-events: none; /* UIの透明な隙間をタップした時はAR空間に干渉できるようにする */
+        }
+
+        /* タップしやすいボタンのデザイン */
+        .ar-button {
+            pointer-events: auto; /* ボタン自体はタップ可能にする */
+            width: 100%;
+            padding: 16px;
+            font-size: 18px;
+            font-weight: bold;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 30px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+
+        /* ボタンを押したときの視覚効果 */
+        .ar-button:active {
+            background-color: #0056b3;
+            transform: scale(0.98);
+        }
     </style>
-  </head>
-  <body>
-    <div id="info">
-      <div>スマホでの操作:</div>
-      <div>・ドラッグ: 立方体回転</div>
-      <div>・ボタン: 自動回転</div>
-      <div>・ピンチ: サイズ変更</div>
-    </div>
-    
-    <div id="controls">
-      <div style="margin-bottom: 10px;">立方体を操作してください</div>
-      <button onclick="toggleAutoRotate()">自動回転 ON/OFF</button>
-      <button onclick="resetObject()">リセット</button>
+</head>
+<body>
+
+    <div class="ui-container">
+        <button class="ar-button" id="action-btn">キューブにアクション！</button>
     </div>
 
-    <a-scene embedded arjs>
-      <a-marker preset="hiro">
-        <!-- 立方体（タッチで操作可能） -->
-        <a-box 
-          id="interactive-cube"
-          position="0 0.5 0" 
-          width="1" 
-          height="1" 
-          depth="1"
-          material="color: #00aaff; wireframe: false;">
-        </a-box>
+    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;">
         
-        <!-- 補助用の球（マーカー中心の視覚化） -->
-        <a-sphere 
-          position="0 0 0" 
-          radius="0.1" 
-          material="color: #ff6600; opacity: 0.5;">
-        </a-sphere>
-      </a-marker>
-      
-      <a-entity camera></a-entity>
+        <a-marker preset="hiro">
+            <a-box 
+                id="target-cube"
+                position="0 0.5 0" 
+                material="color: #ff4757; opacity: 0.9;"
+                animation="property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear">
+            </a-box>
+        </a-marker>
+
+        <a-entity camera></a-entity>
     </a-scene>
 
     <script>
-      const cube = document.getElementById('interactive-cube');
-      let cubeRotation = { x: 0, y: 0, z: 0 };
-      let autoRotate = false;
-      let lastTouchX = 0;
-      let lastTouchY = 0;
-      let lastDistance = 0;
-      let cubeScale = 1;
+        // ボタンを押したときの処理（可読性を重視したシンプルな記述）
+        const button = document.getElementById('action-btn');
+        const cube = document.getElementById('target-cube');
 
-      // ====== タッチドラッグで回転 ======
-      document.addEventListener('touchstart', (e) => {
-        if (e.touches.length === 1) {
-          lastTouchX = e.touches[0].clientX;
-          lastTouchY = e.touches[0].clientY;
-        } else if (e.touches.length === 2) {
-          // ピンチジェスチャー
-          const dx = e.touches[0].clientX - e.touches[1].clientX;
-          const dy = e.touches[0].clientY - e.touches[1].clientY;
-          lastDistance = Math.sqrt(dx * dx + dy * dy);
-        }
-      });
-
-      document.addEventListener('touchmove', (e) => {
-        if (e.touches.length === 1) {
-          const currentX = e.touches[0].clientX;
-          const currentY = e.touches[0].clientY;
-          
-          const deltaX = currentX - lastTouchX;
-          const deltaY = currentY - lastTouchY;
-          
-          // スマホの画面移動を回転に変換
-          cubeRotation.y += deltaX * 1; // X軸方向の移動 → Y軸回転
-          cubeRotation.x += deltaY * 1; // Y軸方向の移動 → X軸回転
-          
-          updateCubeRotation();
-          
-          lastTouchX = currentX;
-          lastTouchY = currentY;
-          
-          autoRotate = false; // 手動操作時は自動回転OFF
-        } else if (e.touches.length === 2) {
-          // ピンチズーム
-          const dx = e.touches[0].clientX - e.touches[1].clientX;
-          const dy = e.touches[0].clientY - e.touches[1].clientY;
-          const currentDistance = Math.sqrt(dx * dx + dy * dy);
-          
-          if (lastDistance > 0) {
-            const scale = currentDistance / lastDistance;
-            cubeScale *= scale;
-            cubeScale = Math.max(0.5, Math.min(2.5, cubeScale)); // 0.5〜2.5倍
-            cube.setAttribute('scale', `${cubeScale} ${cubeScale} ${cubeScale}`);
-          }
-          lastDistance = currentDistance;
-        }
-      });
-
-      // ====== マウスドラッグ（デスクトップテスト用） ======
-      let isMouseDown = false;
-      document.addEventListener('mousedown', (e) => {
-        isMouseDown = true;
-        lastTouchX = e.clientX;
-        lastTouchY = e.clientY;
-      });
-
-      document.addEventListener('mousemove', (e) => {
-        if (isMouseDown) {
-          const deltaX = e.clientX - lastTouchX;
-          const deltaY = e.clientY - lastTouchY;
-          
-          cubeRotation.y += deltaX * 1;
-          cubeRotation.x += deltaY * 1;
-          updateCubeRotation();
-          
-          lastTouchX = e.clientX;
-          lastTouchY = e.clientY;
-          
-          autoRotate = false;
-        }
-      });
-
-      document.addEventListener('mouseup', () => {
-        isMouseDown = false;
-      });
-
-      // ====== ジャイロセンサー（オプション） ======
-      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-        // iOS 13+
-        console.log('ジャイロセンサー対応デバイス');
-      } else if (typeof DeviceOrientationEvent !== 'undefined') {
-        // Android など
-        window.addEventListener('deviceorientation', (e) => {
-          if (!autoRotate) return; // 自動回転時のみジャイロ反映
-          
-          const alpha = e.alpha || 0; // Z軸
-          const beta = e.beta || 0;   // X軸
-          const gamma = e.gamma || 0; // Y軸
-          
-          // ジャイロ情報を反映（微調整）
-          cubeRotation.x = beta * 0.5;
-          cubeRotation.y = gamma * 0.5;
-          updateCubeRotation();
+        button.addEventListener('click', () => {
+            // 例：ボタンを押すとキューブの色が緑に変わり、アラートが出る
+            cube.setAttribute('material', 'color', '#2ed573');
+            alert('キューブに触れました！');
         });
-      }
-
-      // ====== 回転更新 ======
-      function updateCubeRotation() {
-        cube.setAttribute('rotation', 
-          `${cubeRotation.x} ${cubeRotation.y} ${cubeRotation.z}`
-        );
-      }
-
-      // ====== 自動回転トグル ======
-      function toggleAutoRotate() {
-        autoRotate = !autoRotate;
-        
-        if (autoRotate) {
-          // 自動回転アニメーション
-          const autoRotateInterval = setInterval(() => {
-            if (!autoRotate) {
-              clearInterval(autoRotateInterval);
-              return;
-            }
-            cubeRotation.y += 2;
-            updateCubeRotation();
-          }, 30);
-        }
-      }
-
-      // ====== リセット ======
-      function resetObject() {
-        cubeRotation = { x: 0, y: 0, z: 0 };
-        cubeScale = 1;
-        autoRotate = false;
-        updateCubeRotation();
-        cube.setAttribute('scale', '1 1 1');
-      }
-
-      // 初期設定
-      updateCubeRotation();
     </script>
-  </body>
+</body>
 </html>
