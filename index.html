@@ -2,219 +2,232 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AR Hiro Marker</title>
+    <!--
+        Pixelなどの高DPI Androidで豆粒UIにならないための設定。
+        width=device-width + initial-scale=1 + maximum-scale=1 が必須。
+        user-scalable=no でピンチズーム無効化（ARでは邪魔になる）。
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AR Hiro</title>
 
-    <!-- A-Frame 1.4.x + AR.js 3.4.x（最新安定版） -->
-    <script src="https://cdn.jsdelivr.net/npm/aframe@1.4.2/dist/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/ar.js@2.2.2/aframe/build/aframe-ar.js"></script>
+    <!--
+        【互換性メモ】
+        A-Frame 1.2.0 + AR.js master (raw.githack) が現時点で最も安定した組み合わせ。
+        A-Frame 1.4.x + AR.js 2.2.2 は非互換でキューブが描画されない。
+    -->
+    <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
 
     <style>
+        * { box-sizing: border-box; }
+
         body {
             margin: 0;
             overflow: hidden;
             background: #000;
+            /* Pixelの安全領域（ノッチ・パンチホール）を避ける */
+            padding: env(safe-area-inset-top) env(safe-area-inset-right)
+                     env(safe-area-inset-bottom) env(safe-area-inset-left);
         }
 
-        /* デバッグ情報オーバーレイ */
-        #debug-overlay {
-            position: fixed;
-            top: 10px;
-            left: 10px;
-            z-index: 9999;
-            background: rgba(0,0,0,0.6);
-            color: #0ff;
-            font-family: monospace;
-            font-size: 13px;
-            padding: 8px 12px;
-            border-radius: 6px;
-            pointer-events: none;
-            line-height: 1.6;
+        /* AR.jsが生成するcanvasとvideoを画面全体に */
+        canvas, video {
+            width: 100vw !important;
+            height: 100vh !important;
+            object-fit: cover !important;
         }
 
-        /* キャリブレーション調整UI */
-        #controls {
+        /* 調整パネル：文字サイズをvwで指定してどの端末でも読める大きさに */
+        #panel {
             position: fixed;
-            bottom: 20px;
+            bottom: max(20px, env(safe-area-inset-bottom));
             left: 50%;
             transform: translateX(-50%);
             z-index: 9999;
             display: flex;
-            gap: 8px;
+            gap: 6px;
             flex-wrap: wrap;
             justify-content: center;
+            width: 90vw;
         }
 
-        #controls button {
-            background: rgba(0,0,0,0.7);
-            color: white;
-            border: 1px solid rgba(255,255,255,0.3);
-            padding: 8px 14px;
-            border-radius: 20px;
-            font-size: 13px;
+        #panel button {
+            background: rgba(0, 0, 0, 0.75);
+            color: #fff;
+            border: 1.5px solid rgba(255,255,255,0.4);
+            /* vwでサイズ指定 → Pixelでも豆粒にならない */
+            font-size: 4vw;
+            padding: 2vw 4vw;
+            border-radius: 999px;
             cursor: pointer;
-            backdrop-filter: blur(4px);
+            /* タップ領域を広く */
+            min-width: 13vw;
+            min-height: 11vw;
+            touch-action: manipulation;
         }
 
-        #controls button:active {
-            background: rgba(255,255,255,0.2);
+        #panel button:active {
+            background: rgba(255,255,255,0.25);
         }
+
+        /* ステータス表示 */
+        #hud {
+            position: fixed;
+            top: max(12px, env(safe-area-inset-top));
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            background: rgba(0,0,0,0.65);
+            color: #fff;
+            font-family: monospace;
+            /* これもvwで */
+            font-size: 3.5vw;
+            padding: 1.5vw 3vw;
+            border-radius: 8px;
+            white-space: nowrap;
+            text-align: center;
+        }
+
+        #hud .detected { color: #2ed573; }
+        #hud .lost     { color: #ff4757; }
     </style>
 </head>
 <body>
 
-    <div id="debug-overlay">
-        マーカー検出: <span id="status">待機中...</span><br>
-        Y補正: <span id="yval">0.5</span> m &nbsp;
-        Z補正: <span id="zval">0.0</span> m
-    </div>
-
-    <div id="controls">
-        <button onclick="adjustY(-0.1)">Y ▼</button>
-        <button onclick="adjustY(+0.1)">Y ▲</button>
-        <button onclick="adjustZ(-0.1)">Z 近</button>
-        <button onclick="adjustZ(+0.1)">Z 遠</button>
-        <button onclick="resetPos()">リセット</button>
+    <div id="hud">
+        <span id="markerStatus" class="lost">マーカー: 待機中</span>
+        &nbsp;|&nbsp;
+        Y: <span id="yDisp">0.5</span>
+        Z: <span id="zDisp">0.0</span>
     </div>
 
     <!--
-        AR.js パラメータ解説:
-        - sourceType: webcam           → カメラ入力
-        - detectionMode: mono_and_matrix → Hiro(mono)を検出
-        - matrixCodeType: 3x3           → マトリクス系も有効
-        - cameraParametersUrl          → Pixel系に合わせたカメラパラメータ
-          (デフォルトのcamera_para.datが使われる；カスタムが必要な場合は差し替え)
-        - maxDetectionRate: 60          → 検出レートを上げる（Androidは60推奨）
-        - canvasWidth / canvasHeight    → 解像度を明示（Pixelの高解像度対応）
-        - sourceWidth / sourceHeight    → キャプチャ解像度
+        【Androidで位置ズレする主因】
+        AR.jsのデフォルトカメラパラメータはiPhone基準に近い。
+        AndroidはメーカーごとにFOVが違うため、ズレが出やすい。
+        sourceWidth/Height を指定して解像度のズレを減らす。
+        maxDetectionRate: 60 でAndroidの検出安定性を上げる。
     -->
     <a-scene
         embedded
         arjs="
             sourceType: webcam;
-            detectionMode: mono_and_matrix;
-            matrixCodeType: 3x3;
             debugUIEnabled: false;
             maxDetectionRate: 60;
-            canvasWidth: 1280;
-            canvasHeight: 720;
             sourceWidth: 1280;
             sourceHeight: 720;
         "
-        renderer="antialias: true; alpha: true;"
+        renderer="antialias: true; alpha: true; logarithmicDepthBuffer: true;"
         vr-mode-ui="enabled: false"
     >
 
         <!--
-            マーカーの smoothCount / smoothTolerance を増やすと
-            検出が安定するが遅延が増える。
-            Pixelでのジャンプ抑制に効果あり。
+            smooth系パラメータでAndroid特有のガタつきを軽減。
+            smoothCount: フレーム数（多いほど安定するが遅延増）
+            smoothTolerance: ズレ許容量
         -->
         <a-marker
             id="hiroMarker"
             preset="hiro"
             smooth="true"
-            smoothCount="10"
-            smoothTolerance="0.01"
-            smoothThreshold="5"
-            raycaster="objects: .clickable"
+            smoothCount="5"
+            smoothTolerance="0.05"
             emitevents="true"
         >
             <!--
-                position の Y: 0.5 → ボックス(1x1x1)の半分の高さ分浮かせる
-                これでマーカー面の上にちょうど乗る
-
-                もし映像上で位置がズレるなら:
-                  - Z がマイナス → カメラ方向に近い（手前）
-                  - Z がプラス  → カメラから遠い（奥）
-                  - Y が大きい  → 浮かぶ
+                position Y=0.5: ボックス(1×1×1)の半分の高さ → マーカー面に乗る
+                rotation: 45度傾けると「正面から見て浮いてる感」が出る
             -->
             <a-box
                 id="mainBox"
                 position="0 0.5 0"
                 rotation="0 45 0"
-                scale="1 1 1"
-                material="color: #2ed573; metalness: 0.3; roughness: 0.4;"
+                material="color: #2ed573; metalness:0.2; roughness:0.5;"
             >
-                <!-- 回転アニメーション -->
                 <a-animation
                     attribute="rotation"
-                    to="0 405 0"
-                    dur="3000"
+                    from="0 0 0"
+                    to="0 360 0"
+                    dur="4000"
                     easing="linear"
                     repeat="indefinite"
                 ></a-animation>
             </a-box>
 
-            <!-- マーカー面に置くリング（位置確認用） -->
+            <!-- マーカー上の薄いリング（位置の目印） -->
             <a-torus
-                position="0 0.05 0"
+                position="0 0.02 0"
                 rotation="-90 0 0"
-                radius="0.6"
-                radius-tubular="0.02"
-                material="color: #ff4757; wireframe: false; opacity: 0.7;"
+                radius="0.7"
+                radius-tubular="0.015"
+                material="color: #ff4757; opacity: 0.6;"
             ></a-torus>
+
         </a-marker>
 
-        <!-- カメラ（必須） -->
         <a-entity camera></a-entity>
 
     </a-scene>
 
+    <!-- 調整ボタン -->
+    <div id="panel">
+        <button ontouchstart="adjustY(+0.1)" onclick="adjustY(+0.1)">Y↑</button>
+        <button ontouchstart="adjustY(-0.1)" onclick="adjustY(-0.1)">Y↓</button>
+        <button ontouchstart="adjustZ(-0.1)" onclick="adjustZ(-0.1)">Z近</button>
+        <button ontouchstart="adjustZ(+0.1)" onclick="adjustZ(+0.1)">Z遠</button>
+        <button ontouchstart="resetPos()"    onclick="resetPos()">リセット</button>
+    </div>
+
     <script>
-        // ---- 位置リアルタイム調整 ----
+        // ---- 位置微調整 ----
         const box = document.getElementById('mainBox');
-        let posY = 0.5;
-        let posZ = 0.0;
+        let posY = 0.5, posZ = 0.0;
 
         function updatePos() {
             box.setAttribute('position', `0 ${posY.toFixed(2)} ${posZ.toFixed(2)}`);
-            document.getElementById('yval').textContent = posY.toFixed(2);
-            document.getElementById('zval').textContent = posZ.toFixed(2);
+            document.getElementById('yDisp').textContent = posY.toFixed(2);
+            document.getElementById('zDisp').textContent = posZ.toFixed(2);
         }
 
-        function adjustY(delta) {
-            posY = Math.max(-2, Math.min(3, posY + delta));
-            updatePos();
-        }
+        function adjustY(d) { posY = +Math.max(-2, Math.min(3, posY + d)).toFixed(2); updatePos(); }
+        function adjustZ(d) { posZ = +Math.max(-2, Math.min(2, posZ + d)).toFixed(2); updatePos(); }
+        function resetPos()  { posY = 0.5; posZ = 0.0; updatePos(); }
 
-        function adjustZ(delta) {
-            posZ = Math.max(-2, Math.min(2, posZ + delta));
-            updatePos();
-        }
-
-        function resetPos() {
-            posY = 0.5;
-            posZ = 0.0;
-            updatePos();
-        }
-
-        // ---- マーカー検出ステータス表示 ----
-        const marker = document.getElementById('hiroMarker');
-        const statusEl = document.getElementById('status');
+        // ---- マーカー検出表示 ----
+        const marker    = document.getElementById('hiroMarker');
+        const statusEl  = document.getElementById('markerStatus');
 
         marker.addEventListener('markerFound', () => {
-            statusEl.textContent = '✅ 検出中';
-            statusEl.style.color = '#2ed573';
+            statusEl.textContent = 'マーカー: 検出中 ✅';
+            statusEl.className = 'detected';
         });
-
         marker.addEventListener('markerLost', () => {
-            statusEl.textContent = '❌ 見失い';
-            statusEl.style.color = '#ff4757';
+            statusEl.textContent = 'マーカー: 見失い ❌';
+            statusEl.className = 'lost';
         });
 
-        // ---- Android/Pixelでカメラ許可を明示的に要求 ----
-        // AR.jsが自動で取得するが、念のため事前チェック
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-                .then(stream => {
-                    // 許可確認後にストリームを解放（AR.jsが改めて取得する）
-                    stream.getTracks().forEach(t => t.stop());
-                })
-                .catch(err => {
-                    alert('カメラへのアクセスを許可してください。\n' + err.message);
-                });
-        }
+        // ---- Android: バックカメラを明示的に要求 ----
+        // AR.jsのデフォルトがフロントカメラになることがある
+        const sceneEl = document.querySelector('a-scene');
+        sceneEl.addEventListener('loaded', () => {
+            const arSystem = sceneEl.systems['arjs'];
+            if (arSystem && arSystem.arSource) {
+                const video = arSystem.arSource.domElement;
+                if (video) {
+                    // すでに起動中のstreamを確認
+                    const track = video.srcObject?.getVideoTracks?.()[0];
+                    if (track) {
+                        const settings = track.getSettings();
+                        console.log('Camera facing:', settings.facingMode, settings);
+                    }
+                }
+            }
+        });
+
+        // カメラ許可の事前チェック（Androidでの許可忘れ防止）
+        navigator.mediaDevices?.getUserMedia({ video: { facingMode: { ideal: 'environment' } } })
+            .then(s => s.getTracks().forEach(t => t.stop()))
+            .catch(e => alert('カメラを許可してください: ' + e.message));
     </script>
 
 </body>
