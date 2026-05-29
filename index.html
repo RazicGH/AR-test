@@ -2,23 +2,220 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>最小限のAR</title>
-    <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR Hiro Marker</title>
+
+    <!-- A-Frame 1.4.x + AR.js 3.4.x（最新安定版） -->
+    <script src="https://cdn.jsdelivr.net/npm/aframe@1.4.2/dist/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ar.js@2.2.2/aframe/build/aframe-ar.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+        }
+
+        /* デバッグ情報オーバーレイ */
+        #debug-overlay {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 9999;
+            background: rgba(0,0,0,0.6);
+            color: #0ff;
+            font-family: monospace;
+            font-size: 13px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            pointer-events: none;
+            line-height: 1.6;
+        }
+
+        /* キャリブレーション調整UI */
+        #controls {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        #controls button {
+            background: rgba(0,0,0,0.7);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            cursor: pointer;
+            backdrop-filter: blur(4px);
+        }
+
+        #controls button:active {
+            background: rgba(255,255,255,0.2);
+        }
+    </style>
 </head>
-<body style="margin: 0; overflow: hidden;">
+<body>
 
-    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;">
-        
-        <a-marker preset="hiro">
-            
-            <a-box position="0 0 0" material="color: #2ed573;"></a-box>
+    <div id="debug-overlay">
+        マーカー検出: <span id="status">待機中...</span><br>
+        Y補正: <span id="yval">0.5</span> m &nbsp;
+        Z補正: <span id="zval">0.0</span> m
+    </div>
 
+    <div id="controls">
+        <button onclick="adjustY(-0.1)">Y ▼</button>
+        <button onclick="adjustY(+0.1)">Y ▲</button>
+        <button onclick="adjustZ(-0.1)">Z 近</button>
+        <button onclick="adjustZ(+0.1)">Z 遠</button>
+        <button onclick="resetPos()">リセット</button>
+    </div>
+
+    <!--
+        AR.js パラメータ解説:
+        - sourceType: webcam           → カメラ入力
+        - detectionMode: mono_and_matrix → Hiro(mono)を検出
+        - matrixCodeType: 3x3           → マトリクス系も有効
+        - cameraParametersUrl          → Pixel系に合わせたカメラパラメータ
+          (デフォルトのcamera_para.datが使われる；カスタムが必要な場合は差し替え)
+        - maxDetectionRate: 60          → 検出レートを上げる（Androidは60推奨）
+        - canvasWidth / canvasHeight    → 解像度を明示（Pixelの高解像度対応）
+        - sourceWidth / sourceHeight    → キャプチャ解像度
+    -->
+    <a-scene
+        embedded
+        arjs="
+            sourceType: webcam;
+            detectionMode: mono_and_matrix;
+            matrixCodeType: 3x3;
+            debugUIEnabled: false;
+            maxDetectionRate: 60;
+            canvasWidth: 1280;
+            canvasHeight: 720;
+            sourceWidth: 1280;
+            sourceHeight: 720;
+        "
+        renderer="antialias: true; alpha: true;"
+        vr-mode-ui="enabled: false"
+    >
+
+        <!--
+            マーカーの smoothCount / smoothTolerance を増やすと
+            検出が安定するが遅延が増える。
+            Pixelでのジャンプ抑制に効果あり。
+        -->
+        <a-marker
+            id="hiroMarker"
+            preset="hiro"
+            smooth="true"
+            smoothCount="10"
+            smoothTolerance="0.01"
+            smoothThreshold="5"
+            raycaster="objects: .clickable"
+            emitevents="true"
+        >
+            <!--
+                position の Y: 0.5 → ボックス(1x1x1)の半分の高さ分浮かせる
+                これでマーカー面の上にちょうど乗る
+
+                もし映像上で位置がズレるなら:
+                  - Z がマイナス → カメラ方向に近い（手前）
+                  - Z がプラス  → カメラから遠い（奥）
+                  - Y が大きい  → 浮かぶ
+            -->
+            <a-box
+                id="mainBox"
+                position="0 0.5 0"
+                rotation="0 45 0"
+                scale="1 1 1"
+                material="color: #2ed573; metalness: 0.3; roughness: 0.4;"
+            >
+                <!-- 回転アニメーション -->
+                <a-animation
+                    attribute="rotation"
+                    to="0 405 0"
+                    dur="3000"
+                    easing="linear"
+                    repeat="indefinite"
+                ></a-animation>
+            </a-box>
+
+            <!-- マーカー面に置くリング（位置確認用） -->
+            <a-torus
+                position="0 0.05 0"
+                rotation="-90 0 0"
+                radius="0.6"
+                radius-tubular="0.02"
+                material="color: #ff4757; wireframe: false; opacity: 0.7;"
+            ></a-torus>
         </a-marker>
 
+        <!-- カメラ（必須） -->
         <a-entity camera></a-entity>
-        
+
     </a-scene>
+
+    <script>
+        // ---- 位置リアルタイム調整 ----
+        const box = document.getElementById('mainBox');
+        let posY = 0.5;
+        let posZ = 0.0;
+
+        function updatePos() {
+            box.setAttribute('position', `0 ${posY.toFixed(2)} ${posZ.toFixed(2)}`);
+            document.getElementById('yval').textContent = posY.toFixed(2);
+            document.getElementById('zval').textContent = posZ.toFixed(2);
+        }
+
+        function adjustY(delta) {
+            posY = Math.max(-2, Math.min(3, posY + delta));
+            updatePos();
+        }
+
+        function adjustZ(delta) {
+            posZ = Math.max(-2, Math.min(2, posZ + delta));
+            updatePos();
+        }
+
+        function resetPos() {
+            posY = 0.5;
+            posZ = 0.0;
+            updatePos();
+        }
+
+        // ---- マーカー検出ステータス表示 ----
+        const marker = document.getElementById('hiroMarker');
+        const statusEl = document.getElementById('status');
+
+        marker.addEventListener('markerFound', () => {
+            statusEl.textContent = '✅ 検出中';
+            statusEl.style.color = '#2ed573';
+        });
+
+        marker.addEventListener('markerLost', () => {
+            statusEl.textContent = '❌ 見失い';
+            statusEl.style.color = '#ff4757';
+        });
+
+        // ---- Android/Pixelでカメラ許可を明示的に要求 ----
+        // AR.jsが自動で取得するが、念のため事前チェック
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+                .then(stream => {
+                    // 許可確認後にストリームを解放（AR.jsが改めて取得する）
+                    stream.getTracks().forEach(t => t.stop());
+                })
+                .catch(err => {
+                    alert('カメラへのアクセスを許可してください。\n' + err.message);
+                });
+        }
+    </script>
 
 </body>
 </html>
