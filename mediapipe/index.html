@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hand Energy Blast</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm/index.js"
+        crossorigin="anonymous"></script>
+    <style>
+        body {
+            margin: 0;
+            background: #000;
+            overflow: hidden;
+            font-family: sans-serif;
+        }
+
+        /* カメラと描画画面を全画面で重ね、インカメラ用に左右反転 */
+        video,
+        canvas {
+            position: absolute;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+
+        button {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            padding: 12px 24px;
+            font-size: 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+
+    <button id="startBtn">START SYSTEM</button>
+    <video id="webcam" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+
+    <script type="module">
+        import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
+
+        const video = document.getElementById("webcam");
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
+        const startBtn = document.getElementById("startBtn");
+
+        let handLandmarker;
+        let lastVideoTime = -1;
+        let charge = 0; // チャージ量 (0〜100)
+
+        // 1. 手の認識エンジン初期化 (必須)
+        async function init() {
+            const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");
+            handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                baseOptions: {
+                    modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+                    delegate: "GPU"
+                },
+                runningMode: "VIDEO", numHands: 1
+            });
+            startBtn.innerText = "START (CAMERA)";
+        }
+
+        // 2. ボタンをタップしてカメラ開始 (iOS/Androidのセキュリティ対策で必須)
+        startBtn.onclick = async () => {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+            video.srcObject = stream;
+            video.addEventListener("loadeddata", () => {
+                startBtn.style.display = "none";
+                loop();
+            });
+        };
+
+        // 3. メインループ処理
+        async function loop() {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+
+            if (lastVideoTime !== video.currentTime) {
+                lastVideoTime = video.currentTime;
+                const results = handLandmarker.detectForVideo(video, performance.now());
+
+                // カメラ映像をCanvasに描画
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                if (results.landmarks && results.landmarks.length > 0) {
+                    const p = results.landmarks[0];
+                    const x = p[9].x * canvas.width;  // 手のひら中心X
+                    const y = p[9].y * canvas.height; // 手のひら中心Y
+
+                    // 【ロジック】中指の先(12)が第2関節(10)より上にあるか＝手を開いているか
+                    const isOpen = p[12].y < p[10].y;
+
+                    if (!isOpen) {
+                        // ✊ グー：チャージ蓄積
+                        charge = Math.min(charge + 2, 100);
+                        drawCircle(x, y, 60 - (charge * 0.3), "#ffaa00"); // 溜まるほど引き締まるオレンジの球
+                    } else if (charge > 0) {
+                        // 🖐 パー：エネルギー解放（発射）
+                        drawCircle(x, y, charge * 2, "#00ffff"); // パワーに応じたサイズの青いビーム
+                        charge = Math.max(charge - 5, 0);       // チャージを消費
+                    }
+
+                    // チャージ量をテキストで画面に表示（UI要素の削減）
+                    ctx.fillStyle = "#00ffcc";
+                    ctx.font = "bold 24px sans-serif";
+                    ctx.fillText(`CHARGE: ${charge}%`, 30, 50);
+                } else {
+                    charge = Math.max(charge - 2, 0); // 手が映っていない時は自然減少
+                }
+            }
+            requestAnimationFrame(loop);
+        }
+
+        // エフェクト描画用の共通関数（コード削減のため共通化）
+        function drawCircle(x, y, radius, color) {
+            const grad = ctx.createRadialGradient(x, y, 2, x, y, radius);
+            grad.addColorStop(0, "#ffffff");
+            grad.addColorStop(0.4, color);
+            grad.addColorStop(1, "transparent");
+            ctx.fillStyle = grad;
+            ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
+        }
+
+        init();
+    </script>
+</body>
+
+</html>
